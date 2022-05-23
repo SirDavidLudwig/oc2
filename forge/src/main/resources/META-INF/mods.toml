@@ -5,7 +5,7 @@ license = "MIT"
 
 [[mods]]
 modId = "oc2"
-version = "${file.jarVersion}"
+version = "${version}"
 displayName = "OpenComputers II"
 authors = "Sangar"
 description = '''

@@ -1,23 +1,8 @@
-buildscript {
-    repositories {
-        maven { url = 'https://maven.minecraftforge.net' }
-        mavenCentral()
-    }
-    dependencies {
-        classpath group: 'net.minecraftforge.gradle', name: 'ForgeGradle', version: '5.1.+', changing: true
-        classpath group: 'org.spongepowered', name: 'mixingradle', version: '0.7.+'
-    }
-}
-
 plugins {
-    id 'idea'
-    id 'maven-publish'
+    id "architectury-plugin" version "3.4-SNAPSHOT"
+    id "dev.architectury.loom" version "0.11.0-SNAPSHOT" apply false
     id 'com.matthewprenger.cursegradle' version '1.4.0'
 }
-
-apply plugin: 'net.minecraftforge.gradle'
-apply plugin: 'org.spongepowered.mixin'
-apply from: 'minecraft.gradle'
 
 def getGitRef() {
     try {
@@ -32,164 +17,99 @@ def getGitRef() {
     }
 }
 
-version = "${semver}+${getGitRef()}"
-group = 'li.cil.oc2'
-
-java.toolchain {
-    languageVersion = JavaLanguageVersion.of(17)
-    vendor = JvmVendorSpec.ADOPTOPENJDK
+architectury {
+    minecraft = rootProject.minecraft_version
 }
 
-tasks.withType(JavaCompile).configureEach {
-    options.encoding = 'utf-8'
+subprojects {
+    apply plugin: "dev.architectury.loom"
+
+    configurations {
+        embed
+        implementation.extendsFrom embed
+    }
+
+    loom {
+        silentMojangMappingsLicense()
+    }
+
+    dependencies {
+        minecraft "com.mojang:minecraft:${rootProject.minecraft_version}"
+        mappings loom.officialMojangMappings()
+
+        testImplementation 'org.mockito:mockito-inline:4.3.1'
+        testImplementation 'org.junit.jupiter:junit-jupiter-api:5.8.2'
+        testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.8.2'
+    }
 }
 
-repositories {
-    mavenCentral()
-    maven {
-        url 'https://cursemaven.com'
-        content { includeGroup 'curse.maven' }
-    }
-    maven {
-        url 'https://dvs1.progwml6.com/files/maven/'
-        content { includeGroup 'mezz.jei' }
-    }
-    ["fnuecke/SednaMinecraft"].forEach(repo -> {
-        maven {
-            url = uri("https://maven.pkg.github.com/${repo}")
-            credentials {
-                username = project.findProperty("gpr.user") ?: System.getenv("GPR_USER")
-                password = project.findProperty("gpr.key") ?: System.getenv("GPR_KEY")
+allprojects {
+    apply plugin: "java"
+    apply plugin: "architectury-plugin"
+    apply plugin: "maven-publish"
+
+    archivesBaseName = rootProject.archives_base_name
+    version = "${rootProject.semver}+${getGitRef()}"
+    group = rootProject.maven_group
+
+    repositories {
+        repositories {
+            mavenCentral()
+            maven {
+                url 'https://cursemaven.com'
+                content { includeGroup 'curse.maven' }
             }
+            maven {
+                url 'https://dvs1.progwml6.com/files/maven/'
+                content { includeGroup 'mezz.jei' }
+            }
+            ["fnuecke/SednaMinecraft"].forEach(repo -> {
+                maven {
+                    url = uri("https://maven.pkg.github.com/${repo}")
+                    credentials {
+                        username = project.findProperty("gpr.user") ?: System.getenv("GPR_USER")
+                        password = project.findProperty("gpr.key") ?: System.getenv("GPR_KEY")
+                    }
+                }
+            })
         }
-    })
-}
+    }
 
-dependencies {
-    minecraft "net.minecraftforge:forge:${minecraft_version}-${forge_version}"
-    annotationProcessor 'org.spongepowered:mixin:0.8.5:processor'
-
-    implementation "li.cil.sedna:sedna-${minecraft_version}-forge:1.0.13"
-
-    implementation fg.deobf("curse.maven:markdownmanual-502485:3738124")
-
-    compileOnly fg.deobf("mezz.jei:jei-${minecraft_version}:9.7.0.180:api")
-    runtimeOnly fg.deobf("mezz.jei:jei-${minecraft_version}:9.7.0.180")
-
-    testImplementation 'org.mockito:mockito-inline:4.3.1'
-    testImplementation 'org.junit.jupiter:junit-jupiter-api:5.8.2'
-    testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.8.2'
-}
-
-task packageScripts(type: Zip) {
-    archiveFileName = 'scripts.zip'
-    destinationDirectory = file("$buildDir/resources/main/data/oc2/file_systems")
-    from 'src/main/scripts'
-}
-
-task copyLicensesToResources(type: Copy) {
-    from '.'
-    into file("$buildDir/resources/main")
-    include "LICENSE*"
-}
-
-processResources.dependsOn(packageScripts)
-processResources.dependsOn(copyLicensesToResources)
-
-minecraft {
-    mappings channel: 'official', version: minecraft_version
-
-    accessTransformer = file('src/main/resources/META-INF/accesstransformer.cfg')
-
-    runs {
-        all {
-            property 'forge.logging.markers', 'REGISTRIES'
-            property 'forge.logging.console.level', 'info'
-
-            mods {
-                oc2 {
-                    source sourceSets.main
+    publishing {
+        repositories {
+            maven {
+                name = "GitHubPackages"
+                url = System.getenv("GITHUB_MAVEN_URL") ?: ""
+                credentials {
+                    username = System.getenv("GITHUB_ACTOR")
+                    password = System.getenv("GITHUB_TOKEN")
                 }
             }
         }
-
-        client {
-            workingDirectory project.file('run')
-        }
-
-        server {
-            workingDirectory project.file('run')
-            arg "--nogui"
-        }
-
-        data {
-            workingDirectory project.file('run')
-            args '--mod', 'oc2', '--all', '--output', file('src/generated/resources/'), '--existing', file('src/main/resources')
-        }
     }
-}
 
-mixin {
-    add sourceSets.main, 'mixins.oc2.refmap.json'
-    config 'mixins.oc2.json'
-
-//    quiet
-}
-
-task copyGeneratedResources(type: Copy) {
-    from 'src/generated'
-    into 'src/main'
-    exclude 'resources/.cache'
-}
-
-jar {
-    finalizedBy 'reobfJar'
-
-    manifest {
-        attributes([
-            'FMLAT'                   : 'accesstransformer.cfg',
-            'Specification-Title'     : 'oc2',
-            'Specification-Vendor'    : 'Sangar',
-            'Specification-Version'   : '1',
-            'Implementation-Title'    : project.name,
-            'Implementation-Version'  : "${semver}",
-            'Implementation-Vendor'   : 'Sangar',
-            'Implementation-Timestamp': new Date().format("yyyy-MM-dd'T'HH:mm:ssZ"),
-            'MixinConfigs'            : 'mixins.oc2.json',
-        ])
+    task packageScripts(type: Zip) {
+        archiveFileName = 'scripts.zip'
+        destinationDirectory = file("$buildDir/resources/main/data/oc2/file_systems")
+        from 'common/src/main/scripts'
     }
-}
 
-task apiJar(type: Jar) {
-    archiveClassifier.set('api')
-    from sourceSets.main.allSource
-    from sourceSets.main.output
-    include 'li/cil/oc2/api/**'
-}
-
-artifacts {
-    archives apiJar
-}
-
-publishing {
-    publications {
-        mavenJava(MavenPublication) {
-            groupId = project.group
-            artifactId = project.name
-            version = semver
-            artifact jar
-            artifact apiJar
-        }
+    task copyLicensesToResources(type: Copy) {
+        from '.'
+        into file("$buildDir/resources/main")
+        include "LICENSE*"
     }
-    repositories {
-        maven {
-            name = "GitHubPackages"
-            url = System.getenv("GITHUB_MAVEN_URL") ?: ""
-            credentials {
-                username = System.getenv("GITHUB_ACTOR")
-                password = System.getenv("GITHUB_TOKEN")
-            }
-        }
+
+    processResources.dependsOn(packageScripts)
+    processResources.dependsOn(copyLicensesToResources)
+
+    tasks.withType(JavaCompile) {
+        options.encoding = "UTF-8"
+        options.release = 17
+    }
+
+    java {
+        withSourcesJar()
     }
 }
 
@@ -203,21 +123,13 @@ curseforge {
         addGameVersion 'Forge'
         addGameVersion minecraft_version
         addGameVersion 'Java 17'
-        relations {
-            requiredDependency 'markdownmanual'
-            requiredDependency 'sedna'
-        }
     }
 }
 
 idea {
     module {
-        for (final String exclude in ['assets', 'run', 'out', 'logs', 'src/generated']) {
+        for (final String exclude in ['out', 'logs', 'run', 'src/generated']) {
             excludeDirs += file(exclude)
         }
     }
-}
-
-test {
-    useJUnitPlatform()
 }
